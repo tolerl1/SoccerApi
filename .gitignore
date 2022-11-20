@@ -3,6 +3,7 @@ get_data
 conn.txt
 *.ipynb
 DS_STORE
+alembic/versions/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

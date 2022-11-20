@@ -3,3 +3,4 @@ sqlalchemy
 aiohttp
 fastapi
 uvicorn[standard]
+alembic
