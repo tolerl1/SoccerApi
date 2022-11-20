@@ -42,7 +42,7 @@ from pydantic import BaseModel
 
 
 class ClubBase(BaseModel):
-    club_id: Optional[int] = None
+    club_id: int
     name: Optional[str] = None
     pretty_name: Optional[str] = None
     domestic_competition_id: Optional[str] = None
