@@ -41,7 +41,7 @@ from pydantic import BaseModel
 #     pass
 
 
-class ClubBase():
+class ClubBase(BaseModel):
     club_id: Optional[int] = None
     name: Optional[str] = None
     pretty_name: Optional[str] = None
@@ -69,17 +69,17 @@ class Club(ClubBase):
 
 
 class CompetitionBase(BaseModel):
-    competition_id: Optional[str] = None
-    pretty_name: Optional[str] = None
-    type: Optional[str] = None
-    sub_type: Optional[str] = None
-    country_id: Optional[int] = None
+    competition_id: str
+    pretty_name: str
+    type: str
+    sub_type: str
+    country_id: int
     country_name: Optional[str] = None
-    country_latitude: Optional[float] = None
-    country_longitude: Optional[float] = None
+    country_latitude: float
+    country_longitude: float
     domestic_league_code: Optional[str] = None
-    name: Optional[str] = None
-    confederation: Optional[str] = None
+    name: str
+    confederation: str
     url: Optional[str] = None
 
 
@@ -93,7 +93,7 @@ class Competition(CompetitionBase):
 
 
 class GameBase(BaseModel):
-    game_id: Optional[int] = None
+    game_id: int
     competition_id: Optional[str] = None
     competition_type: Optional[str] = None
     season: Optional[str] = None
@@ -140,7 +140,7 @@ class Game(GameBase):
 
 
 class PlayerBase(BaseModel):
-    player_id: Optional[int] = None
+    player_id: int
     pretty_name: Optional[str] = None
     club_id: Optional[int] = None
     club_pretty_name: Optional[str] = None
@@ -169,6 +169,5 @@ class PlayerCreate(PlayerBase):
 
 
 class Player(PlayerBase):
-
     class Config:
         orm_mode = True

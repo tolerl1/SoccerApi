@@ -1,7 +1,8 @@
 from sqlalchemy import Column, ForeignKey, Integer, String, Date, Boolean, Float
-# from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship
 
 from .database import Base
+
 # class Appearance:
 #     __tablename__ = 'appearances'
 
@@ -17,8 +18,7 @@ from .database import Base
 #     goals = Column(Integer)
 #     assists = Column(Integer)
 #     minutes_played = Column(Integer)
-    # player = relationship('Player', back_populates='appearances', lazy=True)
-    # game = relationship('Game', back_populates='appearances', lazy=True)
+
 
 # class ClubGame:
 #     __tablename__ = 'club_games'
@@ -34,7 +34,7 @@ from .database import Base
 #     opponent_manager_name = Column(String)
 #     hosting = Column(String)
 #     is_win = Column(Boolean)
-    # club = relationship('Club', back_populates='games', lazy=True)
+
 
 class Club(Base):
     __tablename__ = 'clubs'
@@ -54,8 +54,7 @@ class Club(Base):
     net_transfer_record = Column(String)
     coach_name = Column(String)
     url = Column(String)
-    # games = relationship('ClubGame', back_populates='club', lazy=True)
-    # players = relationship('Player', back_populates='club', lazy=True)
+
 
 class Competition(Base):
     __tablename__ = 'competitions'
@@ -72,13 +71,13 @@ class Competition(Base):
     name = Column(String)
     confederation = Column(String)
     url = Column(String)
-    # games = relationship('Game', back_populates='competition', lazy=True)
+
 
 class Game(Base):
     __tablename__ = 'games'
 
     game_id = Column(Integer, primary_key=True)
-    competition_id = Column(String, ForeignKey("competitions.competition_id"))
+    competition_id = Column(String)
     competition_type = Column(String)
     season = Column(String)
     round = Column(String)
@@ -98,8 +97,7 @@ class Game(Base):
     attendance = Column(Integer)
     referee = Column(String)
     url = Column(String)
-    # competition = relationship('Competition', back_populates='games', lazy=True)
-    # appearances = relationship('Appearance', back_populates='game', lazy=True)
+
 
 # class PlayerValuation:
 #     __tablename__ = 'player_valuations'
@@ -111,14 +109,14 @@ class Game(Base):
 #     current_club_id = Column(Integer)
 #     market_value = Column(Integer)
 #     player_club_domestic_competition_id = Column(String)
-    # player = relationship('Player', back_populates='player_valuations', lazy=True)
+
 
 class Player(Base):
     __tablename__ = 'players'
 
     player_id = Column(Integer, primary_key=True)
     pretty_name = Column(String)
-    club_id = Column(Integer, ForeignKey("clubs.club_id"))
+    club_id = Column(Integer)
     club_pretty_name = Column(String)
     current_club_id = Column(Integer)
     country_of_citizenship = Column(String)
@@ -138,6 +136,3 @@ class Player(Base):
     image_url = Column(String)
     last_season = Column(String)
     url = Column(String)
-    # player_valuations = relationship('PlayerValuation', back_populates='player', lazy=True)
-    # appearances = relationship('Appearance', back_populates='player', lazy=True)
-    # club = relationship('Club', back_populates='players', lazy=True)
