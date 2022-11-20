@@ -2,6 +2,7 @@
 get_data
 conn.txt
 *.ipynb
+DS_STORE
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
