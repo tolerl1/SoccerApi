@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Union
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app import crud, models, schemas
