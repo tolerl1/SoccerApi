@@ -4,7 +4,7 @@ conn.txt
 *.ipynb
 DS_STORE
 alembic/versions/*
-
+data_queue/*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
