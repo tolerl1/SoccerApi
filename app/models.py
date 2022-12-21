@@ -1,7 +1,7 @@
 from sqlalchemy import Column, ForeignKey, Integer, String, Date, Boolean, Float
 from sqlalchemy.orm import relationship
 
-from .database import Base
+from app.database import Base
 
 # class Appearance:
 #     __tablename__ = 'appearances'

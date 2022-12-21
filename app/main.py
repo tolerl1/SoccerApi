@@ -1,10 +1,11 @@
+from typing import Union
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
 
-from . import crud, models, schemas
-from .database import SessionLocal, engine
+from app import crud, models, schemas
+from app.database import SessionLocal, engine
 
-models.Base.metadata.create_all(bind=engine)
+# models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
@@ -40,6 +41,19 @@ def read_game(game_id: int, db: Session = Depends(get_db)):
     if db_game is None:
         raise HTTPException(status_code=404, detail="Game not found")
     return db_game
+
+
+# @app.get("/players", response_model=list[schemas.Player])
+# def read_players(db: Session = Depends(get_db), skip: int = 0, limit: Union[int, None] = None):
+#     """Retrieve list of players."""
+#     db_player = crud.get_multi_player(db, skip=skip, limit=limit)
+#     if db_player is None:
+#         raise HTTPException(status_code=404, detail="some error")
+#     return db_player
+
+@app.post("/players", response_model=schemas.Player)
+def create_player(item: schemas.PlayerCreate, db: Session = Depends(get_db)):
+    return crud.create_player_item(db, item)
 
 
 @app.get("/players/{player_id}", response_model=schemas.Player)
