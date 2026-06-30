@@ -5,15 +5,19 @@ requires-python = ">=3.12"
 dependencies = [
     "aiofiles>=24.1",
     "aiohttp>=3.11",
-    "aiosqlite>=0.20",
     "alembic>=1.14",
+    "asyncpg>=0.30",
     "fastapi>=0.115",
+    "psycopg2-binary>=2.9",
     "pydantic>=2.10",
-    "sqlalchemy>=2.0",
+    "sqlalchemy[asyncio]>=2.0",
     "uvicorn[standard]>=0.34",
 ]
 
 [project.optional-dependencies]
+dev = [
+    "aiosqlite>=0.20",  # SQLite async driver for local dev without PostgreSQL
+]
 data = [
     "soccerdata>=1.8",
 ]
