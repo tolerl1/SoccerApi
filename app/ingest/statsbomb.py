@@ -173,7 +173,7 @@ async def ingest_competition_season(
     Returns a summary dict with match and event counts.
     """
     matches = await list_matches(competition_id, season_id)
-    if max_matches:
+    if max_matches is not None:
         matches = matches[:max_matches]
 
     match_count = 0
