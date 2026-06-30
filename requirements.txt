@@ -4,3 +4,4 @@ aiohttp
 fastapi
 uvicorn[standard]
 alembic
+pydantic>=2.0

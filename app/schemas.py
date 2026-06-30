@@ -171,3 +171,80 @@ class PlayerCreate(PlayerBase):
 class Player(PlayerBase):
     class Config:
         orm_mode = True
+
+
+# ---------------------------------------------------------------------------
+# Simulator schemas
+# ---------------------------------------------------------------------------
+
+class TeamRating(BaseModel):
+    team: str
+    xgf: float
+    xga: float
+    net_gd: float
+
+
+class PlayerXGC(BaseModel):
+    player_id: int
+    name: Optional[str] = None
+    team: Optional[str] = None
+    position_group: str
+    net_xgc: float
+    offensive_xgc: float
+    defensive_xgc: float
+    market_value_gbp: Optional[float] = None
+
+
+class MatchSimRequest(BaseModel):
+    home_team: Optional[str] = None
+    away_team: Optional[str] = None
+    home_xgf: Optional[float] = None
+    home_xga: Optional[float] = None
+    away_xgf: Optional[float] = None
+    away_xga: Optional[float] = None
+    knockout: bool = False
+    neutral_venue: bool = True
+
+
+class MatchSimResult(BaseModel):
+    home_team: str
+    away_team: str
+    home_goals: int
+    away_goals: int
+    home_xg: float
+    away_xg: float
+    went_to_extra_time: bool
+    went_to_penalties: bool
+    penalty_winner: Optional[str] = None
+    winner: Optional[str] = None
+
+
+class TournamentSimResult(BaseModel):
+    champion: str
+    finalist: str
+    semifinalists: list[str]
+    quarterfinalists: list[str]
+    round_of_16: list[str]
+    round_of_32: list[str]
+    group_stage_exit: list[str]
+
+
+class TeamProbabilityRow(BaseModel):
+    team: str
+    make_round_of_32: float
+    make_round_of_16: float
+    make_quarterfinals: float
+    make_semifinals: float
+    make_final: float
+    win_world_cup: float
+    simulations: int
+
+
+class ClubRating(BaseModel):
+    club_id: Optional[int] = None
+    club_name: Optional[str] = None
+    elo: Optional[float] = None
+    attack: Optional[float] = None
+    defense: Optional[float] = None
+    xgf: Optional[float] = None
+    xga: Optional[float] = None
