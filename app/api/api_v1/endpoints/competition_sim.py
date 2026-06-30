@@ -8,6 +8,7 @@ GET  /competition-sim/team-ratings/{competition_id}/{season}  — derived team r
 """
 
 import asyncio
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy.orm import Session
@@ -16,39 +17,39 @@ from app.database import SessionLocal
 from app.schemas import CompetitionSimRequest, CompetitionSimResponse
 from app.simulator.competitions.registry import COMPETITION_CONFIGS, build_simulator
 
-router = APIRouter()
+router = APIRouter(prefix="/competition-sim", tags=["competition-sim"])
 
 
-def _run_simulation(competition_id: str, season: str, n: int) -> list:
+def _run_simulation(competition_id: str, season: str, n: int) -> list[Any]:
     """Sync helper executed in a thread pool — creates its own DB session."""
     db: Session = SessionLocal()
     try:
         sim = build_simulator(competition_id, season, db)
-        return sim.run_monte_carlo(n_simulations=n)
+        return sim.run_monte_carlo(n_simulations=n)  # type: ignore[return-value]
     finally:
         db.close()
 
 
-def _run_standings(competition_id: str, season: str) -> list:
+def _run_standings(competition_id: str, season: str) -> list[Any]:
     db: Session = SessionLocal()
     try:
         sim = build_simulator(competition_id, season, db)
-        return sim.get_current_standings()
+        return sim.get_current_standings()  # type: ignore[return-value]
     finally:
         db.close()
 
 
-def _run_team_ratings(competition_id: str, season: str) -> tuple[dict, dict]:
+def _run_team_ratings(competition_id: str, season: str) -> tuple[dict[int, Any], dict[int, str]]:
     db: Session = SessionLocal()
     try:
         sim = build_simulator(competition_id, season, db)
-        return sim.get_team_ratings(), sim.get_teams()
+        return sim.get_team_ratings(), sim.get_teams()  # type: ignore[return-value]
     finally:
         db.close()
 
 
 @router.get("/configs")
-async def list_competition_configs():
+def list_competition_configs() -> list[dict[str, str]]:
     """Return all supported competition configurations."""
     return [
         {"competition_id": cid, "name": cfg["name"], "format": cfg["format"]}
@@ -56,8 +57,8 @@ async def list_competition_configs():
     ]
 
 
-@router.post("/simulate", response_model=CompetitionSimResponse)
-async def simulate_competition(req: CompetitionSimRequest):
+@router.post("/simulate")
+async def simulate_competition(req: CompetitionSimRequest) -> CompetitionSimResponse:
     """
     Run a Monte Carlo simulation for any supported competition.
 
@@ -89,7 +90,7 @@ async def simulate_competition(req: CompetitionSimRequest):
 
 
 @router.get("/standings/{competition_id}/{season}")
-async def get_current_standings(competition_id: str, season: str):
+async def get_current_standings(competition_id: str, season: str) -> list[dict[str, Any]]:
     """Return the current league standings from played games in the DB."""
     if competition_id not in COMPETITION_CONFIGS:
         raise HTTPException(status_code=404, detail=f"Unknown competition '{competition_id}'")
@@ -109,7 +110,7 @@ async def get_current_standings(competition_id: str, season: str):
 
 
 @router.get("/team-ratings/{competition_id}/{season}")
-async def get_team_ratings(competition_id: str, season: str):
+async def get_team_ratings(competition_id: str, season: str) -> list[dict[str, Any]]:
     """Return derived team xGF/xGA ratings for a competition/season from DB data."""
     if competition_id not in COMPETITION_CONFIGS:
         raise HTTPException(status_code=404, detail=f"Unknown competition '{competition_id}'")

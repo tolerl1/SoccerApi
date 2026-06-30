@@ -11,13 +11,13 @@ GET  /ingest/xgc/{competition_id}/{season_id}  — compute event-level xGC from 
 """
 
 import asyncio
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
-from app.api.deps import get_db
+from app.api.deps import DbSession
 from app.database import SessionLocal
 from app.schemas import (
     FBrefIngestRequest,
@@ -28,10 +28,10 @@ from app.schemas import (
     StatsBombIngestResponse,
 )
 
-router = APIRouter()
+router = APIRouter(prefix="/ingest", tags=["ingest"])
 
 
-def _sync_call(fn, *args, **kwargs):
+def _sync_call(fn: Any, *args: Any, **kwargs: Any) -> Any:
     """Run a blocking soccerdata function with a dedicated sync DB session."""
     db = SessionLocal()
     try:
@@ -44,8 +44,8 @@ def _sync_call(fn, *args, **kwargs):
 # StatsBomb
 # ---------------------------------------------------------------------------
 
-@router.get("/statsbomb/competitions", response_model=list[StatsBombCompetition])
-async def list_statsbomb_competitions():
+@router.get("/statsbomb/competitions")
+async def list_statsbomb_competitions() -> list[StatsBombCompetition]:
     """
     Return all competitions available in the StatsBomb open-data repository.
     Fetches live from GitHub (or local clone if STATSBOMB_DATA_DIR is set).
@@ -71,8 +71,8 @@ async def list_statsbomb_competitions():
     ]
 
 
-@router.post("/statsbomb", response_model=StatsBombIngestResponse)
-async def ingest_statsbomb(req: StatsBombIngestRequest, db: AsyncSession = Depends(get_db)):
+@router.post("/statsbomb")
+async def ingest_statsbomb(req: StatsBombIngestRequest, db: DbSession) -> StatsBombIngestResponse:
     """
     Ingest a StatsBomb competition/season into the DB.
 
@@ -102,8 +102,8 @@ async def ingest_statsbomb(req: StatsBombIngestRequest, db: AsyncSession = Depen
 # FBref via soccerdata (blocking library — runs in thread pool)
 # ---------------------------------------------------------------------------
 
-@router.post("/fbref/schedule", response_model=FBrefIngestResponse)
-async def ingest_fbref_schedule(req: FBrefIngestRequest):
+@router.post("/fbref/schedule")
+async def ingest_fbref_schedule(req: FBrefIngestRequest) -> FBrefIngestResponse:
     """
     Pull match schedule and results from FBref for a competition/season.
     Requires: pip install soccerdata
@@ -123,8 +123,8 @@ async def ingest_fbref_schedule(req: FBrefIngestRequest):
     return FBrefIngestResponse(**result)
 
 
-@router.post("/fbref/players", response_model=FBrefIngestResponse)
-async def ingest_fbref_players(req: FBrefIngestRequest):
+@router.post("/fbref/players")
+async def ingest_fbref_players(req: FBrefIngestRequest) -> FBrefIngestResponse:
     """
     Pull player season stats from FBref.
     stat_type: standard | shooting | passing | defense | misc
@@ -136,7 +136,8 @@ async def ingest_fbref_players(req: FBrefIngestRequest):
 
     try:
         result = await asyncio.to_thread(
-            _sync_call, fetch_fbref_player_stats, req.competition_id, req.season, stat_type=req.stat_type
+            _sync_call, fetch_fbref_player_stats, req.competition_id, req.season,
+            stat_type=req.stat_type,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -150,8 +151,8 @@ async def ingest_fbref_players(req: FBrefIngestRequest):
 # Understat
 # ---------------------------------------------------------------------------
 
-@router.post("/understat", response_model=FBrefIngestResponse)
-async def ingest_understat(req: FBrefIngestRequest):
+@router.post("/understat")
+async def ingest_understat(req: FBrefIngestRequest) -> FBrefIngestResponse:
     """
     Pull match results with xG from Understat (Big 5 leagues only).
     Requires: pip install soccerdata
@@ -176,7 +177,7 @@ async def ingest_understat(req: FBrefIngestRequest):
 # ---------------------------------------------------------------------------
 
 @router.get("/club-elo")
-async def get_club_elo():
+async def get_club_elo() -> list[dict[str, Any]]:
     """
     Fetch current Club Elo ratings. Returns list of {team, elo, country, level}.
     Does not write to DB. Requires: pip install soccerdata
@@ -187,7 +188,7 @@ async def get_club_elo():
         raise HTTPException(status_code=500, detail=str(exc))
 
     try:
-        return await asyncio.to_thread(fetch_club_elo_ratings)
+        return await asyncio.to_thread(fetch_club_elo_ratings)  # type: ignore[return-value]
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Club Elo error: {exc}")
 
@@ -196,12 +197,12 @@ async def get_club_elo():
 # Event-level xGC
 # ---------------------------------------------------------------------------
 
-@router.get("/xgc/{competition_id}/{season_id}", response_model=list[PlayerXGCEventResult])
+@router.get("/xgc/{competition_id}/{season_id}")
 async def compute_event_xgc(
     competition_id: int,
     season_id: int,
-    db: AsyncSession = Depends(get_db),
-):
+    db: DbSession,
+) -> list[PlayerXGCEventResult]:
     """
     Compute event-level xGC ratings for all players in a StatsBomb
     competition/season (data must have been ingested first via POST /ingest/statsbomb).
