@@ -15,9 +15,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "aiosqlite>=0.20",  # SQLite async driver for local dev without PostgreSQL
-]
 data = [
     "soccerdata>=1.8",
 ]

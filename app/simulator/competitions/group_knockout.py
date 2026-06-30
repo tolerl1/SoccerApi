@@ -179,9 +179,6 @@ class GroupKnockoutSimulator(CompetitionSimulator):
         """Group-stage standings from played games only."""
         groups = self.get_group_assignments()
         teams = self.get_teams()
-        played_set = {g.home_club_id for g in self.get_played_games()} | {
-            g.away_club_id for g in self.get_played_games()
-        }
 
         all_standings: dict[int, TeamStanding] = {}
         for letter, members in groups.items():

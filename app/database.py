@@ -17,10 +17,7 @@ def _async_url(url: str) -> str:
         return url.replace("postgresql://", "postgresql+asyncpg://", 1)
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql+asyncpg://", 1)
-    # SQLite fallback for local dev (requires aiosqlite extra)
-    if url.startswith("sqlite://"):
-        return url.replace("sqlite://", "sqlite+aiosqlite://", 1)
-    return url
+    raise ValueError(f"Unsupported DB URL scheme: {url!r}. Only PostgreSQL is supported.")
 
 
 def _sync_url(url: str) -> str:
@@ -29,15 +26,14 @@ def _sync_url(url: str) -> str:
     if url.startswith("postgresql"):
         rest = url.split("://", 1)[1]
         return f"postgresql+psycopg2://{rest}"
-    # SQLite: no driver swap needed
-    return url
+    raise ValueError(f"Unsupported DB URL scheme: {url!r}. Only PostgreSQL is supported.")
 
 
 # Async engine — all API routes (asyncpg driver)
 async_engine = create_async_engine(_async_url(db_conn), echo=False)
 AsyncSessionLocal = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 
-# Sync engine — thread pool operations and Alembic (psycopg2 driver)
+# Sync engine — thread pool operations only (psycopg2 driver)
 engine = create_engine(_sync_url(db_conn))
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
