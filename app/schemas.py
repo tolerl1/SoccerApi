@@ -248,3 +248,94 @@ class ClubRating(BaseModel):
     defense: Optional[float] = None
     xgf: Optional[float] = None
     xga: Optional[float] = None
+
+
+# ---------------------------------------------------------------------------
+# Competition simulation schemas
+# ---------------------------------------------------------------------------
+
+class LeagueProbRow(BaseModel):
+    club_id: Optional[int] = None
+    club_name: str
+    avg_final_position: float
+    win_title: float
+    qualify_ucl: float
+    qualify_uel: float
+    qualify_uecl: float
+    relegated: float
+    simulations: int
+
+
+class KnockoutProbRow(BaseModel):
+    team_id: Optional[int] = None
+    team_name: str
+    win_tournament: float
+    reach_final: float
+    reach_semifinal: float
+    reach_quarterfinal: float
+    reach_round_of_16: float
+    reach_group_stage: float
+    simulations: int
+
+
+class CompetitionSimRequest(BaseModel):
+    competition_id: str
+    season: str
+    n_simulations: int = 5000
+
+
+class CompetitionSimResponse(BaseModel):
+    competition_id: str
+    season: str
+    format: str
+    n_simulations: int
+    results: list
+
+
+# ---------------------------------------------------------------------------
+# Ingestion schemas
+# ---------------------------------------------------------------------------
+
+class StatsBombIngestRequest(BaseModel):
+    competition_id: int
+    season_id: int
+    events: bool = True
+    max_matches: Optional[int] = None
+
+
+class StatsBombIngestResponse(BaseModel):
+    competition_id: int
+    season_id: int
+    matches_ingested: int
+    events_ingested: int
+
+
+class FBrefIngestRequest(BaseModel):
+    competition_id: str
+    season: str
+    stat_type: str = "standard"
+
+
+class FBrefIngestResponse(BaseModel):
+    competition_id: str
+    season: str
+    games_inserted: Optional[int] = None
+    players_updated: Optional[int] = None
+
+
+class PlayerXGCEventResult(BaseModel):
+    player_id: int
+    player_name: str
+    team_id: int
+    team_name: str
+    offensive_gc: float
+    defensive_gc: float
+    net_gc: float
+    event_count: int
+
+
+class StatsBombCompetition(BaseModel):
+    competition_id: int
+    season_id: int
+    competition_name: str
+    season_name: str

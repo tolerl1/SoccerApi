@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, Date, Boolean, Float
+from sqlalchemy import Column, ForeignKey, Integer, String, Date, Boolean, Float, Text, Index
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -136,3 +136,56 @@ class Player(Base):
     image_url = Column(String)
     last_season = Column(String)
     url = Column(String)
+
+
+# ---------------------------------------------------------------------------
+# StatsBomb event-level tables
+# ---------------------------------------------------------------------------
+
+class StatsBombMatch(Base):
+    __tablename__ = 'statsbomb_matches'
+
+    match_id = Column(Integer, primary_key=True)
+    competition_id = Column(Integer, index=True)
+    season_id = Column(Integer, index=True)
+    competition_name = Column(String)
+    season_name = Column(String)
+    match_date = Column(String)
+    home_team_id = Column(Integer)
+    home_team_name = Column(String)
+    away_team_id = Column(Integer)
+    away_team_name = Column(String)
+    home_score = Column(Integer)
+    away_score = Column(Integer)
+    stadium = Column(String)
+    referee = Column(String)
+
+    events = relationship("StatsBombEvent", back_populates="match", cascade="all, delete-orphan")
+
+
+class StatsBombEvent(Base):
+    __tablename__ = 'statsbomb_events'
+
+    event_id = Column(String, primary_key=True)
+    match_id = Column(Integer, ForeignKey("statsbomb_matches.match_id"), index=True)
+    index = Column(Integer)
+    period = Column(Integer)
+    minute = Column(Integer)
+    second = Column(Integer)
+    event_type = Column(String, index=True)
+    possession = Column(Integer)
+    possession_team_id = Column(Integer)
+    team_id = Column(Integer, index=True)
+    team_name = Column(String)
+    player_id = Column(Integer, index=True)
+    player_name = Column(String)
+    position = Column(String)
+    location_x = Column(Float)
+    location_y = Column(Float)
+    end_location_x = Column(Float)
+    end_location_y = Column(Float)
+    under_pressure = Column(Boolean, default=False)
+    outcome = Column(String)
+    statsbomb_xg = Column(Float)
+
+    match = relationship("StatsBombMatch", back_populates="events")
