@@ -105,7 +105,7 @@ def fetch_fbref_schedule(
             # Update result if now available
             home_g = row.get("home_goals")
             away_g = row.get("away_goals")
-            if home_g is not None and existing.home_club_goals is None:
+            if home_g is not None and away_g is not None and existing.home_club_goals is None:
                 existing.home_club_goals = int(home_g)
                 existing.away_club_goals = int(away_g)
             continue
@@ -219,11 +219,10 @@ def fetch_understat_results(
 # Club Elo
 # ---------------------------------------------------------------------------
 
-def fetch_club_elo_ratings(db: Session) -> list[dict]:
+def fetch_club_elo_ratings() -> list[dict]:
     """
     Pull current Club Elo ratings (updated daily).
-    Returns a list of {team, elo, country, level} dicts — does not write to DB
-    directly since Elo is a derived quantity; use the simulator's ratings.py instead.
+    Returns a list of {team, elo, country, level} dicts — does not write to DB.
     """
     try:
         import soccerdata as sd

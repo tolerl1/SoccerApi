@@ -31,6 +31,15 @@ from app.schemas import (
 router = APIRouter()
 
 
+def _sync_call(fn, *args, **kwargs):
+    """Run a blocking soccerdata function with a dedicated sync DB session."""
+    db = SessionLocal()
+    try:
+        return fn(*args, db=db, **kwargs)
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # StatsBomb
 # ---------------------------------------------------------------------------
@@ -104,15 +113,8 @@ async def ingest_fbref_schedule(req: FBrefIngestRequest):
     except ImportError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
-    def _run():
-        db = SessionLocal()
-        try:
-            return fetch_fbref_schedule(req.competition_id, req.season, db)
-        finally:
-            db.close()
-
     try:
-        result = await asyncio.to_thread(_run)
+        result = await asyncio.to_thread(_sync_call, fetch_fbref_schedule, req.competition_id, req.season)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -132,15 +134,10 @@ async def ingest_fbref_players(req: FBrefIngestRequest):
     except ImportError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
-    def _run():
-        db = SessionLocal()
-        try:
-            return fetch_fbref_player_stats(req.competition_id, req.season, db, stat_type=req.stat_type)
-        finally:
-            db.close()
-
     try:
-        result = await asyncio.to_thread(_run)
+        result = await asyncio.to_thread(
+            _sync_call, fetch_fbref_player_stats, req.competition_id, req.season, stat_type=req.stat_type
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -164,15 +161,8 @@ async def ingest_understat(req: FBrefIngestRequest):
     except ImportError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
-    def _run():
-        db = SessionLocal()
-        try:
-            return fetch_understat_results(req.competition_id, req.season, db)
-        finally:
-            db.close()
-
     try:
-        result = await asyncio.to_thread(_run)
+        result = await asyncio.to_thread(_sync_call, fetch_understat_results, req.competition_id, req.season)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -196,15 +186,8 @@ async def get_club_elo():
     except ImportError as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
-    def _run():
-        db = SessionLocal()
-        try:
-            return fetch_club_elo_ratings(db)
-        finally:
-            db.close()
-
     try:
-        return await asyncio.to_thread(_run)
+        return await asyncio.to_thread(fetch_club_elo_ratings)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Club Elo error: {exc}")
 
