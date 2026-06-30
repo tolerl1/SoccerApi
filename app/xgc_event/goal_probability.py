@@ -17,8 +17,6 @@ StatsBomb pitch: x = 0 (own goal-line) → 120 (opp goal-line)
 Goal center: (120, 40)
 """
 
-from __future__ import annotations
-
 import math
 from functools import lru_cache
 

@@ -13,8 +13,6 @@ Each scraper has its own league codes; the mapping below translates
 from our DB competition_id (Transfermarkt codes) to scraper-specific ones.
 """
 
-from __future__ import annotations
-
 import logging
 from datetime import date
 from typing import Any

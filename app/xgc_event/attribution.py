@@ -18,10 +18,8 @@ Negative GC (losing the ball, giving up a shot) is also attributed.
 Units: same as GP (roughly "expected goals contributed").
 """
 
-from __future__ import annotations
-
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 from .goal_probability import compute_gp
 

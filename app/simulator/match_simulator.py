@@ -3,7 +3,6 @@
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Optional
 
 from .world_cup_2026 import AVERAGE_GOALS
 
@@ -21,10 +20,10 @@ class MatchResult:
     away_xg: float
     went_to_extra_time: bool = False
     went_to_penalties: bool = False
-    penalty_winner: Optional[str] = None
+    penalty_winner: str | None = None
 
     @property
-    def winner(self) -> Optional[str]:
+    def winner(self) -> str | None:
         if self.went_to_penalties:
             return self.penalty_winner
         if self.home_goals > self.away_goals:
@@ -96,7 +95,7 @@ def simulate_match(
 
     went_to_extra_time = False
     went_to_penalties = False
-    penalty_winner: Optional[str] = None
+    penalty_winner: str | None = None
 
     if knockout and home_goals == away_goals:
         went_to_extra_time = True

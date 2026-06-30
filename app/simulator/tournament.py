@@ -8,7 +8,6 @@ Covers:
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from .match_simulator import MatchResult, simulate_match
 from .world_cup_2026 import GROUPS

@@ -13,12 +13,13 @@ Routes:
   GET  /club-ratings              – Elo + attack/defense from match history
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+import asyncio
 
-from app import crud, models
-from app.api import deps
-from app import schemas
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app import crud, schemas
+from app.api.deps import get_db
 from app.simulator import world_cup_2026 as wc
 from app.simulator.match_simulator import simulate_match
 from app.simulator.monte_carlo import run_monte_carlo
@@ -34,7 +35,7 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 
 @router.get("/team-ratings", response_model=list[schemas.TeamRating])
-def get_all_team_ratings():
+async def get_all_team_ratings():
     """Return xGF / xGA / Net GD for all 48 WC 2026 teams, sorted by Net GD."""
     teams = [
         schemas.TeamRating(team=name, **ratings)
@@ -44,11 +45,10 @@ def get_all_team_ratings():
 
 
 @router.get("/team-ratings/{team_name}", response_model=schemas.TeamRating)
-def get_team_rating(team_name: str):
+async def get_team_rating(team_name: str):
     """Return the xGC rating for a single WC 2026 team."""
     rating = wc.TEAM_RATINGS.get(team_name)
     if rating is None:
-        # Try case-insensitive lookup
         for name, r in wc.TEAM_RATINGS.items():
             if name.lower() == team_name.lower():
                 return schemas.TeamRating(team=name, **r)
@@ -61,7 +61,7 @@ def get_team_rating(team_name: str):
 # ---------------------------------------------------------------------------
 
 @router.get("/groups", response_model=dict[str, list[str]])
-def get_groups():
+async def get_groups():
     """Return the WC 2026 group assignments."""
     return wc.GROUPS
 
@@ -71,8 +71,8 @@ def get_groups():
 # ---------------------------------------------------------------------------
 
 @router.get("/player-ratings", response_model=list[schemas.PlayerXGC])
-def get_player_ratings(
-    db: Session = Depends(deps.get_db),
+async def get_player_ratings(
+    db: AsyncSession = Depends(get_db),
     skip: int = 0,
     limit: int = Query(default=50, le=500),
     position_group: str | None = Query(default=None),
@@ -81,7 +81,7 @@ def get_player_ratings(
     Return player xGC ratings computed from market values in the DB.
     Optionally filter by position_group: forward | midfielder | defender | goalkeeper.
     """
-    players = crud.get_multi_player(db)
+    players = await crud.get_multi_player(db)
     if not players:
         raise HTTPException(status_code=404, detail="No players found in DB.")
 
@@ -99,7 +99,7 @@ def get_player_ratings(
 # ---------------------------------------------------------------------------
 
 @router.post("/simulate-match", response_model=schemas.MatchSimResult)
-def simulate_one_match(payload: schemas.MatchSimRequest):
+async def simulate_one_match(payload: schemas.MatchSimRequest):
     """
     Simulate a single match between two teams using Poisson goal-scoring.
 
@@ -110,15 +110,11 @@ def simulate_one_match(payload: schemas.MatchSimRequest):
     home_r = _resolve_team_rating(payload.home_team, payload.home_xgf, payload.home_xga)
     away_r = _resolve_team_rating(payload.away_team, payload.away_xgf, payload.away_xga)
 
-    result = simulate_match(
-        home_team=payload.home_team or "Home",
-        home_xgf=home_r["xgf"],
-        home_xga=home_r["xga"],
-        away_team=payload.away_team or "Away",
-        away_xgf=away_r["xgf"],
-        away_xga=away_r["xga"],
-        knockout=payload.knockout,
-        neutral_venue=payload.neutral_venue,
+    result = await asyncio.to_thread(
+        simulate_match,
+        payload.home_team or "Home", home_r["xgf"], home_r["xga"],
+        payload.away_team or "Away", away_r["xgf"], away_r["xga"],
+        payload.knockout, payload.neutral_venue,
     )
 
     return schemas.MatchSimResult(
@@ -140,9 +136,9 @@ def simulate_one_match(payload: schemas.MatchSimRequest):
 # ---------------------------------------------------------------------------
 
 @router.post("/simulate-tournament", response_model=schemas.TournamentSimResult)
-def simulate_tournament_once():
+async def simulate_tournament_once():
     """Run one complete WC 2026 simulation and return the full bracket outcome."""
-    result = simulate_full_tournament(wc.TEAM_RATINGS)
+    result = await asyncio.to_thread(simulate_full_tournament, wc.TEAM_RATINGS)
     return schemas.TournamentSimResult(
         champion=result.champion,
         finalist=result.finalist,
@@ -159,16 +155,13 @@ def simulate_tournament_once():
 # ---------------------------------------------------------------------------
 
 @router.post("/monte-carlo", response_model=list[schemas.TeamProbabilityRow])
-def run_monte_carlo_simulation(
+async def run_monte_carlo_simulation(
     n_simulations: int = Query(default=1000, ge=100, le=50_000),
 ):
     """
     Run N Monte Carlo WC 2026 simulations and return per-team stage probabilities.
-
-    Recommended n_simulations: 1 000 – 10 000 for fast responses,
-    up to 50 000 for high-accuracy estimates.
     """
-    probs = run_monte_carlo(n_simulations=n_simulations)
+    probs = await asyncio.to_thread(run_monte_carlo, n_simulations)
     rows = [
         schemas.TeamProbabilityRow(
             team=p.team,
@@ -186,19 +179,16 @@ def run_monte_carlo_simulation(
 
 
 @router.get("/probabilities/{team_name}", response_model=schemas.TeamProbabilityRow)
-def get_team_probabilities(
+async def get_team_probabilities(
     team_name: str,
     n_simulations: int = Query(default=5000, ge=100, le=50_000),
 ):
-    """
-    Return stage-progression probabilities for a single team via Monte Carlo.
-    """
-    # Validate team exists
+    """Return stage-progression probabilities for a single team via Monte Carlo."""
     matched = _fuzzy_team_name(team_name)
     if matched is None:
         raise HTTPException(status_code=404, detail=f"Team '{team_name}' not found.")
 
-    probs = run_monte_carlo(n_simulations=n_simulations)
+    probs = await asyncio.to_thread(run_monte_carlo, n_simulations)
     p = probs.get(matched)
     if p is None:
         raise HTTPException(status_code=404, detail=f"No simulation data for '{matched}'.")
@@ -220,8 +210,8 @@ def get_team_probabilities(
 # ---------------------------------------------------------------------------
 
 @router.get("/club-ratings", response_model=list[schemas.ClubRating])
-def get_club_ratings(
-    db: Session = Depends(deps.get_db),
+async def get_club_ratings(
+    db: AsyncSession = Depends(get_db),
     method: str = Query(default="elo", pattern="^(elo|strength)$"),
 ):
     """
@@ -230,12 +220,12 @@ def get_club_ratings(
     method=elo      → Elo points (higher = better)
     method=strength → Attack / defense strength multipliers + derived xGF/xGA
     """
-    games = crud.get_multi_game(db)
+    games = await crud.get_multi_game(db)
     if not games:
         raise HTTPException(status_code=404, detail="No games found in DB.")
 
     if method == "elo":
-        elo = compute_elo_ratings(games)
+        elo = await asyncio.to_thread(compute_elo_ratings, games)
         clubs = {g.home_club_id: g.club_home_pretty_name for g in games}
         clubs.update({g.away_club_id: g.club_away_pretty_name for g in games})
         return sorted(
@@ -251,8 +241,7 @@ def get_club_ratings(
             reverse=True,
         )
 
-    # method == "strength"
-    strengths = compute_attack_defense_strengths(games)
+    strengths = await asyncio.to_thread(compute_attack_defense_strengths, games)
     clubs = {g.home_club_id: g.club_home_pretty_name for g in games}
     clubs.update({g.away_club_id: g.club_away_pretty_name for g in games})
     return sorted(

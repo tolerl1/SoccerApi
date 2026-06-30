@@ -12,14 +12,13 @@ Two entry points:
     for feeding into the Poisson match simulator.
 """
 
-from __future__ import annotations
+from collections.abc import Callable
+from dataclasses import dataclass
 
-from dataclasses import dataclass, field
-from typing import Callable
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from sqlalchemy.orm import Session
-
-from .attribution import attribute_events, PlayerContribution
+from .attribution import attribute_events
 from .goal_probability import compute_gp
 
 
@@ -42,8 +41,8 @@ class PlayerXGCResult:
 class TeamXGCRating:
     team_id: int
     team_name: str
-    xgf: float   # average offensive GC per 90 min (proxy for xGF)
-    xga: float   # average defensive GC conceded per 90 min (proxy for xGA)
+    xgf: float
+    xga: float
     minutes_played: int = 0
 
     @property
@@ -55,8 +54,8 @@ class TeamXGCRating:
 # Player aggregation
 # ---------------------------------------------------------------------------
 
-def compute_player_xgc_from_events(
-    db: Session,
+async def compute_player_xgc_from_events(
+    db: AsyncSession,
     match_ids: list[int],
     gp_fn: Callable = compute_gp,
 ) -> list[PlayerXGCResult]:
@@ -69,21 +68,20 @@ def compute_player_xgc_from_events(
     if not match_ids:
         return []
 
-    events = (
-        db.query(m.StatsBombEvent)
-        .filter(m.StatsBombEvent.match_id.in_(match_ids))
+    result = await db.execute(
+        select(m.StatsBombEvent)
+        .where(m.StatsBombEvent.match_id.in_(match_ids))
         .order_by(m.StatsBombEvent.match_id, m.StatsBombEvent.index)
-        .all()
     )
+    events = list(result.scalars().all())
 
     attributions = attribute_events(events, gp_fn=gp_fn)
 
-    # Accumulate per player
     accum: dict[int, dict] = {}
     for attr in attributions:
         for c in attr.contributions:
             if c.player_id <= 0:
-                continue  # skip placeholder receiver entries
+                continue
             if c.player_id not in accum:
                 accum[c.player_id] = {
                     "player_name": c.player_name,
@@ -97,16 +95,13 @@ def compute_player_xgc_from_events(
             accum[c.player_id]["defensive_gc"] += c.defensive_gc
             accum[c.player_id]["event_count"] += 1
 
-    # Resolve team names from DB
-    team_ids = {v["team_id"] for v in accum.values() if v["team_id"]}
+    # Resolve team names
     team_names: dict[int, str] = {}
-    if team_ids:
-        matches_q = (
-            db.query(m.StatsBombMatch)
-            .filter(m.StatsBombMatch.match_id.in_(match_ids))
-            .all()
+    if accum:
+        match_result = await db.execute(
+            select(m.StatsBombMatch).where(m.StatsBombMatch.match_id.in_(match_ids))
         )
-        for match in matches_q:
+        for match in match_result.scalars().all():
             if match.home_team_id:
                 team_names[match.home_team_id] = match.home_team_name or ""
             if match.away_team_id:
@@ -135,8 +130,8 @@ def compute_player_xgc_from_events(
 # Team aggregation → simulator-ready ratings
 # ---------------------------------------------------------------------------
 
-def compute_team_ratings_from_events(
-    db: Session,
+async def compute_team_ratings_from_events(
+    db: AsyncSession,
     competition_id: int,
     season_id: int,
     gp_fn: Callable = compute_gp,
@@ -148,21 +143,19 @@ def compute_team_ratings_from_events(
     """
     from app import models as m
 
-    matches = (
-        db.query(m.StatsBombMatch)
-        .filter(
-            m.StatsBombMatch.competition_id == competition_id,
-            m.StatsBombMatch.season_id == season_id,
-        )
-        .all()
+    result = await db.execute(
+        select(m.StatsBombMatch)
+        .where(m.StatsBombMatch.competition_id == competition_id)
+        .where(m.StatsBombMatch.season_id == season_id)
     )
+    matches = list(result.scalars().all())
+
     if not matches:
         return {}
 
     match_ids = [match.match_id for match in matches]
-    player_results = compute_player_xgc_from_events(db, match_ids, gp_fn=gp_fn)
+    player_results = await compute_player_xgc_from_events(db, match_ids, gp_fn=gp_fn)
 
-    # Group by team
     team_off: dict[int, float] = {}
     team_def: dict[int, float] = {}
     team_names: dict[int, str] = {}
@@ -173,14 +166,13 @@ def compute_team_ratings_from_events(
         if r.team_name:
             team_names[r.team_id] = r.team_name
 
-    # Estimate minutes: each match contributes 90 min per team
     match_count: dict[int, int] = {}
     for match in matches:
         for tid in (match.home_team_id, match.away_team_id):
             if tid:
                 match_count[tid] = match_count.get(tid, 0) + 1
 
-    results: dict[int, TeamXGCRating] = {}
+    output: dict[int, TeamXGCRating] = {}
     for tid in set(team_off) | set(team_def):
         n_matches = match_count.get(tid, 1)
         minutes = n_matches * 90
@@ -188,13 +180,10 @@ def compute_team_ratings_from_events(
 
         xgf = max(team_off.get(tid, 0.0) * scale, 0.50)
         xga_raw = team_def.get(tid, 0.0) * scale
-        # Defensive GC is how much the team defended; xGA is threat conceded =
-        # average league offense minus what this team defended.
-        # Simple proxy: use 1.55 (league average) minus defensive contribution.
         avg_league_xgf = 1.55
         xga = max(avg_league_xgf - xga_raw, 0.50)
 
-        results[tid] = TeamXGCRating(
+        output[tid] = TeamXGCRating(
             team_id=tid,
             team_name=team_names.get(tid, str(tid)),
             xgf=round(xgf, 3),
@@ -202,4 +191,4 @@ def compute_team_ratings_from_events(
             minutes_played=minutes,
         )
 
-    return results
+    return output

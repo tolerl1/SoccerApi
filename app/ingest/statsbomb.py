@@ -4,34 +4,22 @@ StatsBomb open-data ingestion.
 Two modes:
   1. Local clone  – point STATSBOMB_DATA_DIR at a local clone of
                     github.com/statsbomb/open-data  (fastest, no rate limits)
-  2. HTTP raw     – fetches JSON files directly from the GitHub raw URL
+  2. HTTP raw     – fetches JSON files directly from the GitHub raw URL via aiohttp
 
 Data is parsed and stored in the `statsbomb_matches` and `events` tables.
-
-Available competitions (as of mid-2026):
-  La Liga 2004/05–2020/21  (competition_id=11, the deepest historical dataset)
-  Champions League 2003/04–2018/19  (id=16)
-  Premier League 2003/04, 2015/16   (id=2)
-  Bundesliga 2015/16, 2023/24       (id=9)
-  Ligue 1 2015/16, 2021/22, 2022/23 (id=7)
-  FIFA World Cup 1958–2022           (id=43)
-  UEFA Euro 2020, 2024               (id=55)
-  Copa América 2024                  (id=223)
-  FA WSL 2018/19–2023/24             (id=37)
-  + women's leagues, MLS, AFCON, etc.
 """
 
 import json
 import os
-import urllib.request
 from pathlib import Path
-from typing import Iterator
 
-from sqlalchemy.orm import Session
+import aiofiles
+import aiohttp
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 
-# Base URL for raw GitHub files (public, no auth needed)
 _GH_RAW = "https://raw.githubusercontent.com/statsbomb/open-data/master/data"
 _LOCAL_DIR = os.environ.get("STATSBOMB_DATA_DIR", "")
 
@@ -40,46 +28,52 @@ _LOCAL_DIR = os.environ.get("STATSBOMB_DATA_DIR", "")
 # Low-level JSON fetchers
 # ---------------------------------------------------------------------------
 
-def _read_json(relative_path: str) -> list | dict:
+async def _read_json(relative_path: str) -> list | dict:
     """Read a JSON file from local clone or GitHub raw URL."""
     if _LOCAL_DIR:
         full = Path(_LOCAL_DIR) / "data" / relative_path
-        with open(full) as f:
-            return json.load(f)
+        async with aiofiles.open(full) as f:
+            return json.loads(await f.read())
 
     url = f"{_GH_RAW}/{relative_path}"
-    with urllib.request.urlopen(url, timeout=30) as resp:
-        return json.loads(resp.read())
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            resp.raise_for_status()
+            return await resp.json(content_type=None)
 
 
-def list_competitions() -> list[dict]:
+async def list_competitions() -> list[dict]:
     """Return the StatsBomb competitions index."""
-    return _read_json("competitions.json")
+    return await _read_json("competitions.json")
 
 
-def list_matches(competition_id: int, season_id: int) -> list[dict]:
+async def list_matches(competition_id: int, season_id: int) -> list[dict]:
     """Return match list for a competition/season."""
-    return _read_json(f"matches/{competition_id}/{season_id}.json")
+    return await _read_json(f"matches/{competition_id}/{season_id}.json")
 
 
-def iter_events(match_id: int) -> Iterator[dict]:
-    """Yield all events for a single match."""
-    events = _read_json(f"events/{match_id}.json")
-    yield from events
+async def load_events(match_id: int) -> list[dict]:
+    """Load all events for a single match."""
+    return await _read_json(f"events/{match_id}.json")
 
 
-def load_lineups(match_id: int) -> list[dict]:
-    return _read_json(f"lineups/{match_id}.json")
+async def load_lineups(match_id: int) -> list[dict]:
+    return await _read_json(f"lineups/{match_id}.json")
 
 
 # ---------------------------------------------------------------------------
 # DB writers
 # ---------------------------------------------------------------------------
 
-def upsert_match(db: Session, match: dict, competition_id: int, season_id: int) -> models.StatsBombMatch:
+async def upsert_match(
+    db: AsyncSession, match: dict, competition_id: int, season_id: int
+) -> models.StatsBombMatch:
     """Insert or update a StatsBomb match record."""
     mid = match["match_id"]
-    existing = db.query(models.StatsBombMatch).filter_by(match_id=mid).first()
+    result = await db.execute(
+        select(models.StatsBombMatch).where(models.StatsBombMatch.match_id == mid)
+    )
+    existing = result.scalar_one_or_none()
 
     obj = existing or models.StatsBombMatch()
     obj.match_id = mid
@@ -102,7 +96,7 @@ def upsert_match(db: Session, match: dict, competition_id: int, season_id: int) 
     return obj
 
 
-def upsert_events_for_match(db: Session, match_id: int) -> int:
+async def upsert_events_for_match(db: AsyncSession, match_id: int) -> int:
     """
     Fetch and store all events for `match_id`.
     Returns number of events written.
@@ -114,15 +108,19 @@ def upsert_events_for_match(db: Session, match_id: int) -> int:
         "Ball Receipt*", "Interception", "Clearance", "Dribble",
     }
 
+    events = await load_events(match_id)
     count = 0
-    for ev in iter_events(match_id):
+
+    for ev in events:
         etype = ev.get("type", {}).get("name", "")
         if etype not in RELEVANT_TYPES:
             continue
 
         eid = ev["id"]
-        existing = db.query(models.StatsBombEvent).filter_by(event_id=eid).first()
-        if existing:
+        existing = await db.execute(
+            select(models.StatsBombEvent).where(models.StatsBombEvent.event_id == eid)
+        )
+        if existing.scalar_one_or_none():
             continue  # idempotent
 
         loc = ev.get("location") or [None, None]
@@ -159,12 +157,12 @@ def upsert_events_for_match(db: Session, match_id: int) -> int:
         db.add(obj)
         count += 1
 
-    db.flush()
+    await db.flush()
     return count
 
 
-def ingest_competition_season(
-    db: Session,
+async def ingest_competition_season(
+    db: AsyncSession,
     competition_id: int,
     season_id: int,
     events: bool = True,
@@ -172,10 +170,9 @@ def ingest_competition_season(
 ) -> dict:
     """
     Full ingestion pipeline for one StatsBomb competition/season.
-
     Returns a summary dict with match and event counts.
     """
-    matches = list_matches(competition_id, season_id)
+    matches = await list_matches(competition_id, season_id)
     if max_matches:
         matches = matches[:max_matches]
 
@@ -183,12 +180,12 @@ def ingest_competition_season(
     event_count = 0
 
     for m in matches:
-        upsert_match(db, m, competition_id, season_id)
+        await upsert_match(db, m, competition_id, season_id)
         match_count += 1
         if events:
-            event_count += upsert_events_for_match(db, m["match_id"])
+            event_count += await upsert_events_for_match(db, m["match_id"])
 
-    db.commit()
+    await db.commit()
     return {
         "competition_id": competition_id,
         "season_id": season_id,
