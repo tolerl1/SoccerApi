@@ -13,6 +13,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dev = [
+    "pyright>=1.1",
+    "ruff>=0.9",
+]
 data = [
     "soccerdata>=1.8",
 ]
@@ -20,6 +24,18 @@ ml = [
     "numpy>=2.2",
     "scikit-learn>=1.6",
 ]
+
+[tool.fastapi]
+entrypoint = "app.main:app"
+
+[tool.pyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
+include = ["app"]
+exclude = ["alembic"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
 
 [tool.uv]
 package = false

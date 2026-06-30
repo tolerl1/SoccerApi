@@ -2,40 +2,40 @@
 xGC World Cup Simulator API endpoints.
 
 Routes:
-  GET  /team-ratings              – xGF/xGA/Net GD for all 48 WC 2026 teams
-  GET  /team-ratings/{team}       – Single team rating
-  GET  /player-ratings            – Player xGC ratings computed from DB
-  GET  /groups                    – WC 2026 group assignments
-  POST /simulate-match            – One-off Poisson match simulation
-  POST /simulate-tournament       – Single full WC 2026 simulation
-  POST /monte-carlo               – N-trial Monte Carlo probability table
-  GET  /probabilities/{team}      – Stage probabilities for one team (10k sims)
-  GET  /club-ratings              – Elo + attack/defense from match history
+  GET  /simulator/team-ratings              – xGF/xGA/Net GD for all 48 WC 2026 teams
+  GET  /simulator/team-ratings/{team}       – Single team rating
+  GET  /simulator/player-ratings            – Player xGC ratings computed from DB
+  GET  /simulator/groups                    – WC 2026 group assignments
+  POST /simulator/simulate-match            – One-off Poisson match simulation
+  POST /simulator/simulate-tournament       – Single full WC 2026 simulation
+  POST /simulator/monte-carlo               – N-trial Monte Carlo probability table
+  GET  /simulator/probabilities/{team}      – Stage probabilities for one team (10k sims)
+  GET  /simulator/club-ratings              – Elo + attack/defense from match history
 """
 
 import asyncio
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException, Query
 
 from app import crud, schemas
-from app.api.deps import get_db
+from app.api.deps import DbSession
 from app.simulator import world_cup_2026 as wc
 from app.simulator.match_simulator import simulate_match
 from app.simulator.monte_carlo import run_monte_carlo
 from app.simulator.tournament import simulate_full_tournament
 from app.simulator.ratings import compute_elo_ratings, compute_attack_defense_strengths
-from app.simulator.xgc import compute_player_xgc, compute_team_xgc_from_players
+from app.simulator.xgc import compute_player_xgc
 
-router = APIRouter()
+router = APIRouter(prefix="/simulator", tags=["simulator"])
 
 
 # ---------------------------------------------------------------------------
 # Team ratings (hardcoded xGC from The Athletic's WC 2026 model)
 # ---------------------------------------------------------------------------
 
-@router.get("/team-ratings", response_model=list[schemas.TeamRating])
-async def get_all_team_ratings():
+@router.get("/team-ratings")
+def get_all_team_ratings() -> list[schemas.TeamRating]:
     """Return xGF / xGA / Net GD for all 48 WC 2026 teams, sorted by Net GD."""
     teams = [
         schemas.TeamRating(team=name, **ratings)
@@ -44,8 +44,8 @@ async def get_all_team_ratings():
     return sorted(teams, key=lambda t: t.net_gd, reverse=True)
 
 
-@router.get("/team-ratings/{team_name}", response_model=schemas.TeamRating)
-async def get_team_rating(team_name: str):
+@router.get("/team-ratings/{team_name}")
+def get_team_rating(team_name: str) -> schemas.TeamRating:
     """Return the xGC rating for a single WC 2026 team."""
     rating = wc.TEAM_RATINGS.get(team_name)
     if rating is None:
@@ -60,8 +60,8 @@ async def get_team_rating(team_name: str):
 # Groups
 # ---------------------------------------------------------------------------
 
-@router.get("/groups", response_model=dict[str, list[str]])
-async def get_groups():
+@router.get("/groups")
+def get_groups() -> dict[str, list[str]]:
     """Return the WC 2026 group assignments."""
     return wc.GROUPS
 
@@ -70,13 +70,13 @@ async def get_groups():
 # Player xGC ratings (derived from DB market values)
 # ---------------------------------------------------------------------------
 
-@router.get("/player-ratings", response_model=list[schemas.PlayerXGC])
+@router.get("/player-ratings")
 async def get_player_ratings(
-    db: AsyncSession = Depends(get_db),
-    skip: int = 0,
-    limit: int = Query(default=50, le=500),
-    position_group: str | None = Query(default=None),
-):
+    db: DbSession,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 50,
+    position_group: Annotated[str | None, Query()] = None,
+) -> list[schemas.PlayerXGC]:
     """
     Return player xGC ratings computed from market values in the DB.
     Optionally filter by position_group: forward | midfielder | defender | goalkeeper.
@@ -90,16 +90,15 @@ async def get_player_ratings(
     if position_group:
         ratings = [r for r in ratings if r["position_group"] == position_group.lower()]
 
-    ratings = ratings[skip: skip + limit]
-    return [schemas.PlayerXGC(**r) for r in ratings]
+    return [schemas.PlayerXGC(**r) for r in ratings[skip: skip + limit]]
 
 
 # ---------------------------------------------------------------------------
 # Match simulation
 # ---------------------------------------------------------------------------
 
-@router.post("/simulate-match", response_model=schemas.MatchSimResult)
-async def simulate_one_match(payload: schemas.MatchSimRequest):
+@router.post("/simulate-match")
+async def simulate_one_match(payload: schemas.MatchSimRequest) -> schemas.MatchSimResult:
     """
     Simulate a single match between two teams using Poisson goal-scoring.
 
@@ -135,8 +134,8 @@ async def simulate_one_match(payload: schemas.MatchSimRequest):
 # Tournament simulation
 # ---------------------------------------------------------------------------
 
-@router.post("/simulate-tournament", response_model=schemas.TournamentSimResult)
-async def simulate_tournament_once():
+@router.post("/simulate-tournament")
+async def simulate_tournament_once() -> schemas.TournamentSimResult:
     """Run one complete WC 2026 simulation and return the full bracket outcome."""
     result = await asyncio.to_thread(simulate_full_tournament, wc.TEAM_RATINGS)
     return schemas.TournamentSimResult(
@@ -154,10 +153,10 @@ async def simulate_tournament_once():
 # Monte Carlo probability table
 # ---------------------------------------------------------------------------
 
-@router.post("/monte-carlo", response_model=list[schemas.TeamProbabilityRow])
+@router.post("/monte-carlo")
 async def run_monte_carlo_simulation(
-    n_simulations: int = Query(default=1000, ge=100, le=50_000),
-):
+    n_simulations: Annotated[int, Query(ge=100, le=50_000)] = 1000,
+) -> list[schemas.TeamProbabilityRow]:
     """
     Run N Monte Carlo WC 2026 simulations and return per-team stage probabilities.
     """
@@ -178,11 +177,11 @@ async def run_monte_carlo_simulation(
     return sorted(rows, key=lambda r: r.win_world_cup, reverse=True)
 
 
-@router.get("/probabilities/{team_name}", response_model=schemas.TeamProbabilityRow)
+@router.get("/probabilities/{team_name}")
 async def get_team_probabilities(
     team_name: str,
-    n_simulations: int = Query(default=5000, ge=100, le=50_000),
-):
+    n_simulations: Annotated[int, Query(ge=100, le=50_000)] = 5000,
+) -> schemas.TeamProbabilityRow:
     """Return stage-progression probabilities for a single team via Monte Carlo."""
     matched = _fuzzy_team_name(team_name)
     if matched is None:
@@ -209,11 +208,11 @@ async def get_team_probabilities(
 # Club ratings from DB
 # ---------------------------------------------------------------------------
 
-@router.get("/club-ratings", response_model=list[schemas.ClubRating])
+@router.get("/club-ratings")
 async def get_club_ratings(
-    db: AsyncSession = Depends(get_db),
-    method: str = Query(default="elo", pattern="^(elo|strength)$"),
-):
+    db: DbSession,
+    method: Annotated[str, Query(pattern="^(elo|strength)$")] = "elo",
+) -> list[schemas.ClubRating]:
     """
     Compute club ratings from historical match results in the DB.
 
@@ -269,7 +268,7 @@ def _resolve_team_rating(
     team_name: str | None,
     xgf_override: float | None,
     xga_override: float | None,
-) -> dict:
+) -> dict[str, float]:
     if xgf_override is not None and xga_override is not None:
         return {"xgf": xgf_override, "xga": xga_override}
     if team_name:

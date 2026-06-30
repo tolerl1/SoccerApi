@@ -1,23 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query
 
 from app import crud, schemas
-from app.api.deps import get_db
+from app.api.deps import DbSession
 
-router = APIRouter()
+router = APIRouter(prefix="/players", tags=["players"])
 
 
-@router.get("/", response_model=list[schemas.Player])
-async def read_players(db: AsyncSession = Depends(get_db), skip: int = 0, limit: int | None = None):
+@router.get("/")
+async def read_players(
+    db: DbSession,
+    skip: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int | None, Query(ge=1, le=10_000)] = None,
+) -> list[schemas.Player]:
     """Retrieve list of players."""
-    players = await crud.get_multi_player(db, skip=skip, limit=limit)
-    if players is None:
-        raise HTTPException(status_code=404, detail="some error")
-    return players
+    return await crud.get_multi_player(db, skip=skip, limit=limit)
 
 
-@router.get("/{player_id}", response_model=schemas.Player)
-async def read_player_by_id(player_id: int, db: AsyncSession = Depends(get_db)):
+@router.get("/{player_id}")
+async def read_player_by_id(player_id: int, db: DbSession) -> schemas.Player:
     """Retrieve a player by id."""
     player = await crud.get_player_by_id(db, player_id=player_id)
     if player is None:
